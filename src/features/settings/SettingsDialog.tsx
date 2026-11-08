@@ -1,24 +1,19 @@
-import {
-  CircleAlert,
-  FileText,
-  FolderOpen,
-  Gauge,
-  KeyRound,
-  RefreshCcw,
-  ShieldCheck,
-  X,
-} from "lucide-react";
-import { useEffect, useRef } from "react";
-
+import { ArrowClockwiseIcon, ArrowSquareOutIcon, FolderOpenIcon, XIcon } from "@phosphor-icons/react";
 import type { ApiProviderSettings, AppSettings, ToolsReport } from "../../lib/types";
-import { Input } from "../../components/ui/input";
+import { IconButton } from "../../components/ui/IconButton";
+import type { ThemePreference } from "../../lib/use-theme";
+import { useEffect, useRef, useState } from "react";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
+import { Input } from "../../components/ui/input";
+import { version } from "../../../package.json";
 
 type CookieBrowser = AppSettings["cookieBrowser"];
 
 type SettingsDialogProps = {
   open: boolean;
+  themePreference: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
   outputFolder: string;
   autoStart: boolean;
   showAdvanced: boolean;
@@ -31,6 +26,7 @@ type SettingsDialogProps = {
   cookieFile: string;
   apiProvider: ApiProviderSettings;
   tools: ToolsReport | null;
+  isDesktop: boolean;
   checkingTools: boolean;
   checkingUpdates: boolean;
   onClose: () => void;
@@ -49,49 +45,22 @@ type SettingsDialogProps = {
   onSave: () => void;
   onRepairTools: () => void;
   onCheckUpdates: () => void;
+  onOpenSource: () => void;
 };
 
-function toolSummary(tool: ToolsReport["ytDlp"] | undefined) {
+type SettingsTab = "general" | "appearance" | "advanced" | "about";
+
+function toolSummary(tool: ToolsReport["ytDlp"] | undefined, isDesktop: boolean) {
   if (!tool) return "Checking";
+  if (!isDesktop) return "Preview data";
   if (!tool.available) return "Not installed yet";
   if (tool.verified) return "Ready · SHA-256 verified";
-  return "Ready · provided by your system";
+  return "Ready · provided by system";
 }
 
-export function SettingsDialog({
-  open,
-  outputFolder,
-  autoStart,
-  showAdvanced,
-  communityFallback,
-  instagramProxyFallback,
-  concurrency,
-  cookiesFromBrowser,
-  cookieBrowser,
-  cookieBrowserProfile,
-  cookieFile,
-  apiProvider,
-  tools,
-  checkingTools,
-  checkingUpdates,
-  onClose,
-  onChooseFolder,
-  onAutoStartChange,
-  onShowAdvancedChange,
-  onCommunityFallbackChange,
-  onInstagramProxyFallbackChange,
-  onConcurrencyChange,
-  onCookiesFromBrowserChange,
-  onCookieBrowserChange,
-  onCookieBrowserProfileChange,
-  onChooseCookieFile,
-  onRemoveCookieFile,
-  onApiProviderChange,
-  onSave,
-  onRepairTools,
-  onCheckUpdates,
-}: SettingsDialogProps) {
+export function SettingsDialog({ open, themePreference, onThemeChange, outputFolder, autoStart, showAdvanced, communityFallback, instagramProxyFallback, concurrency, cookiesFromBrowser, cookieBrowser, cookieBrowserProfile, cookieFile, apiProvider, tools, isDesktop, checkingTools, checkingUpdates, onClose, onChooseFolder, onAutoStartChange, onShowAdvancedChange, onCommunityFallbackChange, onInstagramProxyFallbackChange, onConcurrencyChange, onCookiesFromBrowserChange, onCookieBrowserChange, onCookieBrowserProfileChange, onChooseCookieFile, onRemoveCookieFile, onApiProviderChange, onSave, onRepairTools, onCheckUpdates, onOpenSource }: SettingsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -100,9 +69,6 @@ export function SettingsDialog({
     if (open && !dialog.open) {
       if (typeof dialog.showModal === "function") dialog.showModal();
       else dialog.setAttribute("open", "");
-      window.setTimeout(() => {
-        dialog.querySelector<HTMLElement>("button:not([aria-label='Close settings'])")?.focus();
-      }, 0);
     } else if (!open && dialog.open) {
       if (typeof dialog.close === "function") dialog.close();
       else dialog.removeAttribute("open");
@@ -110,10 +76,7 @@ export function SettingsDialog({
   }, [open]);
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="settings-dialog"
-      aria-labelledby="settings-title"
+    <dialog ref={dialogRef} className="modal-dialog" aria-labelledby="settings-dialog-title"
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -122,267 +85,298 @@ export function SettingsDialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="dialog-panel">
-        <header className="dialog-header">
-          <div>
-            <h2 id="settings-title">Settings</h2>
-            <p>Download location, engine, privacy, and updates.</p>
+      <div className="modal-panel settings-panel">
+        <header className="modal-header">
+          <div className="modal-title-lockup">
+            <h2 id="settings-dialog-title">Settings</h2>
           </div>
-          <button type="button" className="icon-button quiet" aria-label="Close settings" onClick={onClose}>
-            <X aria-hidden="true" />
-          </button>
+          <IconButton label="Close settings" onClick={onClose}>
+            <XIcon size={16} weight="regular" aria-hidden="true" />
+          </IconButton>
         </header>
 
-        <div className="settings-body">
-          <section className="settings-section">
-            <div className="section-title-row">
-              <div>
-                <h3>Download folder</h3>
-                <p>MediaFilez never overwrites an existing file.</p>
-              </div>
-              <button type="button" className="secondary-button" onClick={onChooseFolder}>
-                <FolderOpen aria-hidden="true" />
-                Choose
-              </button>
-            </div>
-            <p className="path-display" title={outputFolder}>{outputFolder || "Downloads"}</p>
-          </section>
 
-          <section className="settings-section settings-grid">
-            <label className="field-group compact">
-              <span>Parallel fragments</span>
-              <Select
-                value={String(concurrency)}
-                onChange={(event) => onConcurrencyChange(Number(event.currentTarget.value))}
-              >
-                <option value="1">1 · lowest resource use</option>
-                <option value="2">2 · efficient</option>
-                <option value="4">4 · balanced</option>
-                <option value="8">8 · fast connection</option>
-              </Select>
-            </label>
-            <div className="setting-note">
-              <Gauge aria-hidden="true" />
-              <p>Two works well on older PCs. Four or eight can speed up HLS and DASH downloads.</p>
-            </div>
-          </section>
+        <nav className="settings-nav" aria-label="Settings categories">
+          <button type="button" className={`settings-nav-item ${activeTab === "general" ? "is-active" : ""}`} onClick={() => setActiveTab("general")}>
+            General
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === "appearance" ? "is-active" : ""}`} onClick={() => setActiveTab("appearance")}>
+            Appearance
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === "advanced" ? "is-active" : ""}`} onClick={() => setActiveTab("advanced")}>
+            Advanced
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === "about" ? "is-active" : ""}`} onClick={() => setActiveTab("about")}>
+            About
+          </button>
+        </nav>
 
-          <section className="settings-section toggle-list">
-            <label className="toggle-row">
-              <span>
-                <strong>Auto-start pasted links</strong>
-                <small>Start only when clipboard text is a complete URL.</small>
-              </span>
-              <Switch checked={autoStart} onCheckedChange={onAutoStartChange} aria-label="Auto-start downloads" />
-            </label>
-            <label className="toggle-row">
-              <span>
-                <strong>Show advanced options</strong>
-                <small>Show muted video, bitrate, browser session, and fallback controls.</small>
-              </span>
-              <Switch checked={showAdvanced} onCheckedChange={onShowAdvancedChange} aria-label="Show advanced options" />
-            </label>
-          </section>
 
-          {showAdvanced && (
-            <>
-              <section className="settings-section">
-                <div className="section-title-row auth-heading">
-                  <div>
-                    <h3>Site sign-in</h3>
-                    <p>For private or age-restricted links you can already open in your browser.</p>
-                  </div>
-                  <KeyRound aria-hidden="true" />
-                </div>
-                <label className="toggle-row">
-                  <span>
-                    <strong>Use browser session</strong>
-                    <small>Firefox is the most reliable choice on Windows. Cookies stay on this device.</small>
+        <div className="modal-body settings-body">
+          {activeTab === "general" && (
+            <div className="settings-tab-pane">
+              <section className="settings-field-group">
+                <span className="field-title">Download folder</span>
+                <p className="field-desc">Files are saved locally and never overwritten.</p>
+                <div className="folder-row">
+                  <span className="folder-path" title={outputFolder}>
+                    {outputFolder || "Downloads"}
                   </span>
-                  <Switch
-                    checked={cookiesFromBrowser}
-                    onCheckedChange={onCookiesFromBrowserChange}
-                    aria-label="Use browser session"
-                  />
+                  <button type="button" className="secondary-button compact-btn" onClick={onChooseFolder}>
+                    <FolderOpenIcon size={16} weight="regular" aria-hidden="true" />
+                    Choose folder
+                  </button>
+                </div>
+              </section>
+
+              <section className="settings-field-group">
+                <div className="select-field">
+                  <label htmlFor="parallel-fragments" className="field-title">Parallel fragments</label>
+                  <p className="field-desc">Higher fragments increase download speed on fast connections.</p>
+                  <Select id="parallel-fragments" value={String(concurrency)} onChange={(event) => onConcurrencyChange(Number(event.currentTarget.value))}>
+                    <option value="1">1 - lowest resource use</option>
+                    <option value="2">2 - efficient (default)</option>
+                    <option value="4">4 - balanced</option>
+                    <option value="8">8 - fast connection</option>
+                  </Select>
+                </div>
+              </section>
+
+              <section className="settings-field-group">
+                <label className="switch-row">
+                  <div className="switch-text">
+                    <span className="field-title">Auto-start downloads</span>
+                    <span className="field-desc">Automatically begin downloading valid links upon pasting.</span>
+                  </div>
+                  <Switch checked={autoStart} onCheckedChange={onAutoStartChange} aria-label="Auto-start downloads"/>
                 </label>
-                {cookiesFromBrowser && (
-                  <>
-                    <div className="settings-grid two-fields inset-field">
-                      <label className="field-group compact">
-                        <span>Browser</span>
+              </section>
+            </div>
+          )}
+
+
+          {activeTab === "appearance" && (
+            <div className="settings-tab-pane">
+              <section className="settings-field-group">
+                <span className="field-title">Interface theme</span>
+                <p className="field-desc">Choose whether to follow your operating system theme or force light/dark.</p>
+                <div className="theme-options" role="radiogroup" aria-label="Theme selection">
+                  <button type="button" role="radio" aria-checked={themePreference === "system"} className={`theme-card ${themePreference === "system" ? "is-selected" : ""}`} onClick={() => onThemeChange("system")}>
+                    <span className="theme-card-title">System default</span>
+                    <span className="theme-card-sub">Follows OS dark/light mode</span>
+                  </button>
+                  <button type="button" role="radio" aria-checked={themePreference === "dark"} className={`theme-card ${themePreference === "dark" ? "is-selected" : ""}`} onClick={() => onThemeChange("dark")}>
+                    <span className="theme-card-title">Dark mode</span>
+                    <span className="theme-card-sub">Deep neutral dark surfaces</span>
+                  </button>
+                  <button type="button" role="radio" aria-checked={themePreference === "light"} className={`theme-card ${themePreference === "light" ? "is-selected" : ""}`} onClick={() => onThemeChange("light")}>
+                    <span className="theme-card-title">Light mode</span>
+                    <span className="theme-card-sub">Crisp high-contrast paper</span>
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
+
+
+
+          {activeTab === "advanced" && (
+            <div className="settings-tab-pane">
+              <section className="settings-field-group">
+                <label className="switch-row">
+                  <div className="switch-text">
+                    <span className="field-title">Show advanced options</span>
+                    <span className="field-desc">Exposes audio bitrate, browser sessions, and fallback endpoints.</span>
+                  </div>
+                  <Switch checked={showAdvanced} onCheckedChange={onShowAdvancedChange} aria-label="Show advanced options"/>
+                </label>
+              </section>
+
+              {showAdvanced && (
+                <>
+                  <section className="settings-field-group">
+                    <span className="field-title">Site sign-in</span>
+                    <p className="field-desc">Use browser cookies for private or age-restricted links.</p>
+                    <label className="switch-row inset-switch">
+                      <div className="switch-text">
+                        <span>Use browser session</span>
+                        <span className="field-desc">Cookies never leave this device.</span>
+                      </div>
+                      <Switch checked={cookiesFromBrowser} onCheckedChange={onCookiesFromBrowserChange} aria-label="Use browser session"/>
+                    </label>
+
+                    {cookiesFromBrowser && (
+                      <div className="cookie-browser-inputs">
+                        <label className="select-field">
+                          <span className="option-label">Browser</span>
+                          <Select value={cookieBrowser} onChange={(event) => onCookieBrowserChange(event.currentTarget.value as CookieBrowser) }>
+                            <option value="firefox">Mozilla Firefox (recommended)</option>
+                            <option value="edge">Microsoft Edge</option>
+                            <option value="chrome">Google Chrome</option>
+                            <option value="brave">Brave</option>
+                            <option value="vivaldi">Vivaldi</option>
+                            <option value="opera">Opera</option>
+                          </Select>
+                        </label>
+
+                        <label className="text-field">
+                          <span className="option-label">Profile (optional)</span>
+                          <Input value={cookieBrowserProfile} onChange={(event) => onCookieBrowserProfileChange(event.currentTarget.value)} placeholder="Default profile" autoComplete="off"/>
+                        </label>
+                      </div>
+                    )}
+
+                    <div className="cookie-file-box">
+                      <div className="cookie-file-text">
+                        <span className="cookie-file-name">Netscape cookies.txt</span>
+                        <span className="cookie-file-help">Alternative cookie file export</span>
+                        {cookieFile && <span className="cookie-file-path">{cookieFile}</span>}
+                      </div>
+                      <div className="cookie-file-actions">
+                        <button type="button" className="secondary-button compact-btn" onClick={onChooseCookieFile} >
+                          Choose file
+                        </button>
+                        {cookieFile && (
+                          <button type="button" className="ghost-button compact-btn" onClick={onRemoveCookieFile}>
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="settings-field-group">
+                    <span className="field-title">Authorized Cobalt pool</span>
+                    <p className="field-desc">Self-hosted or owner-authorized v11 instances.</p>
+                    <textarea
+                      className="mono-textarea"
+                      value={apiProvider.baseUrl}
+                      onChange={(event) =>
+                        onApiProviderChange({
+                          ...apiProvider,
+                          baseUrl: event.currentTarget.value,
+                          enabled: Boolean(event.currentTarget.value.trim()),
+                        })
+                      }
+                      placeholder={"https://cobalt-one.example\nhttps://cobalt-two.example"}
+                      rows={2}
+                    />
+                    <div className="cobalt-sub-grid">
+                      <label className="select-field">
+                        <span className="option-label">Authentication</span>
                         <Select
-                          value={cookieBrowser}
-                          onChange={(event) => onCookieBrowserChange(event.currentTarget.value as CookieBrowser)}
+                          value={apiProvider.authType}
+                          onChange={(event) =>
+                            onApiProviderChange({
+                              ...apiProvider,
+                              authType: event.currentTarget.value as ApiProviderSettings["authType"],
+                            })
+                          }
                         >
-                          <option value="firefox">Mozilla Firefox (recommended)</option>
-                          <option value="edge">Microsoft Edge</option>
-                          <option value="chrome">Google Chrome</option>
-                          <option value="brave">Brave</option>
-                          <option value="vivaldi">Vivaldi</option>
-                          <option value="opera">Opera</option>
+                          <option value="none">None</option>
+                          <option value="api-key">Api-Key</option>
+                          <option value="bearer">Bearer</option>
                         </Select>
                       </label>
-                      <label className="field-group compact">
-                        <span>Profile (optional)</span>
+                      <label className="text-field">
+                        <span className="option-label">Session token</span>
                         <Input
-                          value={cookieBrowserProfile}
-                          onChange={(event) => onCookieBrowserProfileChange(event.currentTarget.value)}
-                          placeholder="Default profile"
+                          type="password"
+                          value={apiProvider.token}
+                          onChange={(event) => onApiProviderChange({ ...apiProvider, token: event.currentTarget.value }) }
+                          placeholder="Not saved to disk"
                           autoComplete="off"
                         />
                       </label>
                     </div>
-                    {cookieBrowser !== "firefox" && (
-                      <p className="warning-copy browser-warning">
-                        <CircleAlert aria-hidden="true" />
-                        Chromium may block cookie access on Windows. Close the browser first, or use Firefox or cookies.txt.
-                      </p>
-                    )}
-                  </>
-                )}
+                  </section>
 
-                <div className="cookie-file-row">
-                  <FileText aria-hidden="true" />
-                  <div>
-                    <strong>Netscape cookies.txt</strong>
-                    <small>Use an exported cookie file when direct browser access is blocked.</small>
-                    {cookieFile && <span className="cookie-file-path" title={cookieFile}>{cookieFile}</span>}
+                  <section className="settings-field-group">
+                    <span className="field-title">External fallbacks</span>
+                    <label className="switch-row">
+                      <div className="switch-text">
+                        <span>Community fallback servers</span>
+                        <span className="field-desc">Legacy opt-in directory.</span>
+                      </div>
+                      <Switch checked={communityFallback} onCheckedChange={onCommunityFallbackChange} aria-label="Community fallback servers"/>
+                    </label>
+                    <label className="switch-row">
+                      <div className="switch-text">
+                        <span>Instagram embed fallback</span>
+                        <span className="field-desc">Last-attempt embed proxy for public Instagram posts.</span>
+                      </div>
+                      <Switch checked={instagramProxyFallback} onCheckedChange={onInstagramProxyFallbackChange} aria-label="Instagram embed fallback"/>
+                    </label>
+                  </section>
+                </>
+              )}
+
+              <section className="settings-field-group engine-status-group">
+                <span className="field-title">Engine status</span>
+                <div className="engine-tools-list">
+                  <div className="engine-tool-item">
+                    <span className="tool-name">yt-dlp:</span>
+                    <span className="tool-version">{toolSummary(tools?.ytDlp, isDesktop)}</span>
                   </div>
-                  <div className="cookie-file-actions">
-                    <button type="button" className="secondary-button" onClick={onChooseCookieFile}>
-                      Choose file
-                    </button>
-                    {cookieFile && (
-                      <button type="button" className="text-button" onClick={onRemoveCookieFile}>
-                        Remove
-                      </button>
-                    )}
+                  <div className="engine-tool-item">
+                    <span className="tool-name">gallery-dl:</span>
+                    <span className="tool-version">{toolSummary(tools?.galleryDl, isDesktop)}</span>
+                  </div>
+                  <div className="engine-tool-item">
+                    <span className="tool-name">Deno:</span>
+                    <span className="tool-version">{toolSummary(tools?.deno, isDesktop)}</span>
+                  </div>
+                  <div className="engine-tool-item">
+                    <span className="tool-name">FFmpeg:</span>
+                    <span className="tool-version">{toolSummary(tools?.ffmpeg, isDesktop)}</span>
                   </div>
                 </div>
-              </section>
-
-              <section className="settings-section">
-                <div className="section-title-row">
-                  <div>
-                    <h3>Authorized Cobalt pool</h3>
-                    <p>Try self-hosted or owner-approved v11 instances in this order.</p>
-                  </div>
-                  <KeyRound aria-hidden="true" />
-                </div>
-                <label className="field-group compact">
-                  <span>HTTPS endpoints</span>
-                  <textarea
-                    value={apiProvider.baseUrl}
-                    onChange={(event) =>
-                      onApiProviderChange({
-                        ...apiProvider,
-                        baseUrl: event.currentTarget.value,
-                        enabled: Boolean(event.currentTarget.value.trim()),
-                      })
-                    }
-                    placeholder={"https://cobalt-one.example\nhttps://cobalt-two.example"}
-                    inputMode="url"
-                  />
-                  <small>One endpoint per line. The first valid media response wins.</small>
-                </label>
-                <div className="settings-grid two-fields">
-                  <label className="field-group compact">
-                    <span>Authentication</span>
-                    <Select
-                      value={apiProvider.authType}
-                      onChange={(event) =>
-                        onApiProviderChange({
-                          ...apiProvider,
-                          authType: event.currentTarget.value as ApiProviderSettings["authType"],
-                        })
-                      }
-                    >
-                      <option value="none">None</option>
-                      <option value="api-key">Api-Key</option>
-                      <option value="bearer">Bearer</option>
-                    </Select>
-                  </label>
-                  <label className="field-group compact">
-                    <span>Session token</span>
-                    <Input
-                      type="password"
-                      value={apiProvider.token}
-                      onChange={(event) =>
-                        onApiProviderChange({ ...apiProvider, token: event.currentTarget.value })
-                      }
-                      placeholder="Not saved to disk"
-                      autoComplete="off"
-                    />
-                  </label>
+                <div className="engine-actions">
+                  <button type="button" className="secondary-button compact-btn" onClick={onCheckUpdates} disabled={checkingUpdates || checkingTools}>
+                    <ArrowClockwiseIcon size={16} weight="regular" className={checkingUpdates ? "spin" : undefined} aria-hidden="true" />
+                    {checkingUpdates ? "Checking" : "Check updates"}
+                  </button>
+                  <button type="button" className="ghost-button compact-btn" onClick={onRepairTools} disabled={checkingTools}>
+                    {checkingTools ? "Repairing" : "Repair engine"}
+                  </button>
                 </div>
               </section>
-
-              <section className="settings-section warning-section">
-                <label className="toggle-row">
-                  <span>
-                    <strong>Community Cobalt directory</strong>
-                    <small>Legacy opt-in. Prefer endpoints whose owners gave you access.</small>
-                  </span>
-                  <Switch
-                    checked={communityFallback}
-                    onCheckedChange={onCommunityFallbackChange}
-                    aria-label="Community fallback servers"
-                  />
-                </label>
-                <p className="warning-copy">
-                  <CircleAlert aria-hidden="true" />
-                  Off by default. Use only servers whose owners permit third-party clients.
-                </p>
-                <label className="toggle-row fallback-toggle">
-                  <span>
-                    <strong>Instagram embed fallback</strong>
-                    <small>Last attempt for public Instagram posts. Cookies and API tokens are never sent.</small>
-                  </span>
-                  <Switch
-                    checked={instagramProxyFallback}
-                    onCheckedChange={onInstagramProxyFallbackChange}
-                    aria-label="Instagram embed fallback"
-                  />
-                </label>
-                <p className="warning-copy">
-                  <CircleAlert aria-hidden="true" />
-                  Experimental third-party service. Returned files still pass URL, redirect, type, and content checks.
-                </p>
-              </section>
-            </>
+            </div>
           )}
 
-          <section className="settings-section engine-section">
-            <div>
-              <ShieldCheck aria-hidden="true" />
-              <div>
-                <h3>Engine integrity</h3>
-                <p>yt-dlp: {toolSummary(tools?.ytDlp)}</p>
-                <p>gallery-dl: {toolSummary(tools?.galleryDl)}</p>
-                <p>Deno: {toolSummary(tools?.deno)}</p>
-                <p>FFmpeg: {toolSummary(tools?.ffmpeg)}</p>
-              </div>
+
+
+          {activeTab === "about" && (
+            <div className="settings-tab-pane">
+              <section className="settings-field-group">
+                <span className="field-title">MediaFilez Desktop</span>
+                <p className="field-desc mono-text">Version {version}</p>
+                <p className="field-desc">A calm, local-first media downloader designed for privacy and precision.</p>
+              </section>
+
+              <section className="settings-field-group">
+                <span className="field-title">Privacy & Telemetry</span>
+                <p className="field-desc">
+                  MediaFilez contains zero trackers, analytics, or telemetry. All media extraction, cookies,
+                  and downloaded files stay strictly on your computer.
+                </p>
+              </section>
+
+              <section className="settings-field-group">
+                <span className="field-title">License & Source</span>
+                <p className="field-desc">Released under the MIT License.</p>
+                <button type="button" className="secondary-button compact-btn" onClick={onOpenSource}>
+                  <ArrowSquareOutIcon size={16} weight="regular" aria-hidden="true" />
+                  View source on GitHub
+                </button>
+              </section>
             </div>
-            <div className="settings-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={onCheckUpdates}
-                disabled={checkingUpdates || checkingTools}
-              >
-                <RefreshCcw aria-hidden="true" className={checkingUpdates ? "spin" : undefined} />
-                {checkingUpdates ? "Checking" : "Check updates"}
-              </button>
-              <button type="button" className="text-button" onClick={onRepairTools} disabled={checkingTools}>
-                {checkingTools ? "Repairing" : "Repair engine"}
-              </button>
-            </div>
-          </section>
+          )}
         </div>
 
-        <footer className="dialog-footer">
-          <button type="button" className="text-button" onClick={onClose}>Cancel</button>
-          <button type="button" className="primary-button compact" onClick={onSave}>Save settings</button>
+        <footer className="modal-footer">
+          <button type="button" className="ghost-button" onClick={onClose}>Close</button>
+          <button type="button" className="primary-button" onClick={onSave}>Save settings</button>
         </footer>
       </div>
     </dialog>

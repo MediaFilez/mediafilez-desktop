@@ -1,15 +1,4 @@
-import type {
-  AppSettings,
-  AppUpdateInfo,
-  AudioBitrate,
-  AudioFormat,
-  DownloadMode,
-  JobUpdate,
-  SetupProgress,
-  ToolsReport,
-  ToolUpdatesReport,
-  VideoQuality,
-} from "./types";
+import type { AppSettings, AppUpdateInfo, AudioBitrate, AudioFormat, DownloadMode, JobUpdate, SetupProgress, ToolsReport, ToolUpdatesReport, VideoQuality } from "./types";
 
 export type StartRequest = {
   url: string;

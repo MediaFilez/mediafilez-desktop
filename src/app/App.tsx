@@ -1,39 +1,27 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
-import { version } from "../../package.json";
 
-import { AppHeader } from "../components/layout/AppHeader";
+import type { ApiProviderSettings, AppUpdateInfo, AudioBitrate, AudioFormat, DownloadMode, JobItem, JobUpdate, SetupProgress, ToolsReport, ToolUpdatesReport, VideoQuality } from "../lib/types";
+import { browserFallbackClient, createTauriClient, type TauriClient } from "../lib/tauri-client";
+import { readComposerPreferences, writeComposerPreferences } from "../lib/preferences";
+import { AppSidebar, type SidebarView } from "../components/layout/AppSidebar";
 import { DownloadComposer } from "../features/downloads/DownloadComposer";
+import { SettingsDialog } from "../features/settings/SettingsDialog";
 import { DownloadList } from "../features/downloads/DownloadList";
 import { SetupStatus } from "../features/downloads/SetupStatus";
-import { SettingsDialog } from "../features/settings/SettingsDialog";
 import { UpdateDialog } from "../features/updates/UpdateDialog";
-import {
-  browserFallbackClient,
-  createTauriClient,
-  type TauriClient,
-} from "../lib/tauri-client";
-import type {
-  ApiProviderSettings,
-  AppUpdateInfo,
-  AudioBitrate,
-  AudioFormat,
-  DownloadMode,
-  JobItem,
-  JobUpdate,
-  SetupProgress,
-  ToolsReport,
-  ToolUpdatesReport,
-  VideoQuality,
-} from "../lib/types";
-import { useTheme } from "../lib/use-theme";
+import { FINISHED_JOB_STATUSES } from "../lib/download-options";
+import { AppHeader } from "../components/layout/AppHeader";
+import { lookupUpdates } from "../lib/updates";
 import { isProbablyUrl } from "../lib/utils";
+import { useTheme } from "../lib/use-theme";
 import "../styles/app.css";
 
 const REPO_URL = "https://github.com/RlxChap2/mediafilez-desktop";
 const HISTORY_KEY = "mediafilez-desktop-history-v1";
 const AUTOSTART_KEY = "mediafilez-desktop-autostart";
 const ADVANCED_KEY = "mediafilez-desktop-advanced";
+const SIDEBAR_KEY = "mediafilez-desktop-sidebar-collapsed";
 
 const initialApiProvider: ApiProviderSettings = {
   enabled: false,
@@ -57,7 +45,7 @@ function readHistory(): JobItem[] {
         (job): job is JobItem =>
           typeof job?.id === "string" &&
           typeof job?.url === "string" &&
-          ["complete", "failed", "cancelled"].includes(job?.status),
+          FINISHED_JOB_STATUSES.includes(job?.status),
       )
       .slice(0, 30);
   } catch {
@@ -65,39 +53,28 @@ function readHistory(): JobItem[] {
   }
 }
 
-async function lookupUpdates(target: TauriClient) {
-  const [appResult, toolsResult] = await Promise.allSettled([
-    target.checkAppUpdate(),
-    target.checkToolUpdates(),
-  ]);
-  return {
-    app: appResult.status === "fulfilled" ? appResult.value : null,
-    tools: toolsResult.status === "fulfilled" ? toolsResult.value : null,
-    appFailed: appResult.status === "rejected",
-    toolsFailed: toolsResult.status === "rejected",
-    failed: appResult.status === "rejected" && toolsResult.status === "rejected",
-  };
-}
-
 function App() {
-  const { theme, toggle: toggleTheme } = useTheme();
+  const { theme, preference: themePreference, setTheme: setThemePreference } = useTheme();
+  const [composerDefaults] = useState(readComposerPreferences);
   const [client, setClient] = useState<TauriClient>(browserFallbackClient);
+  const [activeView, setActiveView] = useState<SidebarView>("downloader");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readPref(SIDEBAR_KEY, false));
   const [url, setUrl] = useState("");
-  const [mode, setMode] = useState<DownloadMode>("video");
-  const [removeAudio, setRemoveAudio] = useState(false);
-  const [videoQuality, setVideoQuality] = useState<VideoQuality>("best");
-  const [audioFormat, setAudioFormat] = useState<AudioFormat>("best");
-  const [audioBitrate, setAudioBitrate] = useState<AudioBitrate>("best");
+  const [mode, setMode] = useState<DownloadMode>(composerDefaults.mode);
+  const [removeAudio, setRemoveAudio] = useState(composerDefaults.removeAudio);
+  const [videoQuality, setVideoQuality] = useState<VideoQuality>(composerDefaults.videoQuality);
+  const [audioFormat, setAudioFormat] = useState<AudioFormat>(composerDefaults.audioFormat);
+  const [audioBitrate, setAudioBitrate] = useState<AudioBitrate>(composerDefaults.audioBitrate);
   const [outputFolder, setOutputFolder] = useState("");
+  const [starting, setStarting] = useState(false);
+  const startingRef = useRef(false);
   const [jobs, setJobs] = useState<JobItem[]>(readHistory);
   const [apiProvider, setApiProvider] = useState(initialApiProvider);
   const [communityFallback, setCommunityFallback] = useState(false);
   const [instagramProxyFallback, setInstagramProxyFallback] = useState(false);
   const [concurrency, setConcurrency] = useState(2);
   const [cookiesFromBrowser, setCookiesFromBrowser] = useState(false);
-  const [cookieBrowser, setCookieBrowser] = useState<
-    "edge" | "chrome" | "firefox" | "brave" | "vivaldi" | "opera"
-  >("firefox");
+  const [cookieBrowser, setCookieBrowser] = useState<"edge" | "chrome" | "firefox" | "brave" | "vivaldi" | "opera">("firefox");
   const [cookieBrowserProfile, setCookieBrowserProfile] = useState("");
   const [cookieFile, setCookieFile] = useState("");
   const [autoStart, setAutoStart] = useState(() => readPref(AUTOSTART_KEY, false));
@@ -113,12 +90,16 @@ function App() {
   const [installingUpdate, setInstallingUpdate] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<number | null>(null);
 
+  const finishedHistory = useMemo(() => jobs.filter((job) => FINISHED_JOB_STATUSES.includes(job.status)).slice(0, 30), [jobs]);
+  const finishedHistoryJson = useMemo(() => JSON.stringify(finishedHistory), [finishedHistory]);
+
   useEffect(() => {
-    const finished = jobs
-      .filter((job) => ["complete", "failed", "cancelled"].includes(job.status))
-      .slice(0, 30);
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(finished));
-  }, [jobs]);
+    window.localStorage.setItem(HISTORY_KEY, finishedHistoryJson);
+  }, [finishedHistoryJson]);
+
+  useEffect(() => {
+    writeComposerPreferences({ mode, videoQuality, audioFormat, audioBitrate, removeAudio });
+  }, [mode, videoQuality, audioFormat, audioBitrate, removeAudio]);
 
   const applyDownloadUpdate = useCallback((update: JobUpdate) => {
     setJobs((previous) =>
@@ -140,9 +121,6 @@ function App() {
           : job,
       ),
     );
-    if (update.status === "failed") {
-      toast.error("Download failed", { description: update.error });
-    }
   }, []);
 
   useEffect(() => {
@@ -162,6 +140,7 @@ function App() {
         tauriClient.checkTools(),
       ]);
       if (!mounted) return;
+
       if (folderResult.status === "fulfilled") setOutputFolder(folderResult.value);
       if (settingsResult.status === "fulfilled") {
         const settings = settingsResult.value;
@@ -185,12 +164,12 @@ function App() {
               .checkTools()
               .then(setTools)
               .catch((error) => {
-                toast.error("Engine status could not be refreshed", {
+                toast.error("Downloader status could not be refreshed", {
                   description: String(error),
                 });
               });
             if (progress.phase === "error") {
-              toast.error("Engine setup failed", { description: progress.message });
+              toast.error("Downloader setup failed", { description: progress.message });
             }
           } else {
             setSetupProgress(progress);
@@ -217,14 +196,17 @@ function App() {
   }, [applyDownloadUpdate]);
 
   const startDownload = useCallback(
-    async (overrides?: { url?: string; mode?: DownloadMode }) => {
+    async (overrides?: { url?: string; mode?: DownloadMode }): Promise<string | null> => {
+      if (startingRef.current) return null;
+
       const targetUrl = (overrides?.url ?? url).trim();
       if (!isProbablyUrl(targetUrl)) {
         toast.error("Enter a complete http or https media link.");
-        return;
+        return null;
       }
       const jobMode = overrides?.mode ?? (mode === "video" && removeAudio ? "muted-video" : mode);
-
+      startingRef.current = true;
+      setStarting(true);
       try {
         const id = await client.startDownload({
           url: targetUrl,
@@ -239,8 +221,13 @@ function App() {
           ...previous,
         ]);
         if (!overrides?.url) setUrl("");
+        return id;
       } catch (error) {
         toast.error("Download could not start", { description: String(error) });
+        return null;
+      } finally {
+        startingRef.current = false;
+        setStarting(false);
       }
     },
     [client, url, mode, removeAudio, outputFolder, videoQuality, audioFormat, audioBitrate],
@@ -252,13 +239,21 @@ function App() {
       if (!text) return;
       setUrl(text);
       if (autoStart && isProbablyUrl(text)) {
-        void startDownload({ url: text });
-        setUrl("");
+        const id = await startDownload({ url: text });
+        if (id) setUrl("");
       }
     } catch {
       toast.error("Clipboard access is unavailable. Paste with Ctrl+V.");
     }
   }
+
+  const handleNewDownload = useCallback(() => {
+    setActiveView("downloader");
+    setTimeout(() => {
+      const input = document.querySelector<HTMLInputElement>("input[type='url']");
+      input?.focus();
+    }, 40);
+  }, []);
 
   async function chooseFolder() {
     const selected = await client.chooseOutputFolder();
@@ -277,9 +272,10 @@ function App() {
     setSettingsOpen(true);
   }
 
-  function retryJob(job: JobItem) {
+  async function retryJob(job: JobItem) {
+    const id = await startDownload({ url: job.url, mode: job.mode });
+    if (!id) return;
     setJobs((previous) => previous.filter((item) => item.id !== job.id));
-    void startDownload({ url: job.url, mode: job.mode });
   }
 
   function updatePref(key: string, value: boolean, setter: (value: boolean) => void) {
@@ -313,7 +309,7 @@ function App() {
       setTools(await client.setupTools());
       setToolUpdates(await client.checkToolUpdates());
     } catch (error) {
-      toast.error("Engine setup failed", { description: String(error) });
+      toast.error("Engine repair failed", { description: String(error) });
     } finally {
       setCheckingTools(false);
     }
@@ -326,20 +322,9 @@ function App() {
     setAppUpdate(updates.app);
     setToolUpdates(updates.tools);
     setCheckingUpdates(false);
-    if (updates.failed) {
+    if (updates.failed || updates.appFailed || updates.toolsFailed) {
       toast.error("Update check failed", { description: "Check your connection and try again." });
       return;
-    }
-    if (updates.appFailed && !updates.tools?.updatesAvailable) {
-      toast.error("App update check failed", { description: "Check your connection and try again." });
-      return;
-    }
-    if (updates.toolsFailed && !updates.app) {
-      toast.error("Tool update check failed", { description: "Check your connection and try again." });
-      return;
-    }
-    if (updates.appFailed || updates.toolsFailed) {
-      toast.warning("Some updates could not be checked.");
     }
     setUpdateOpen(true);
   }
@@ -373,68 +358,113 @@ function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader
-        theme={theme}
+      <AppSidebar
+        activeView={activeView}
+        onViewChange={setActiveView}
+        jobs={jobs}
         tools={tools}
         engineBusy={setupProgress !== null}
-        isDesktop={client.isDesktop}
-        onToggleTheme={toggleTheme}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() =>
+          updatePref(SIDEBAR_KEY, !sidebarCollapsed, setSidebarCollapsed)
+        }
+        onNewDownload={handleNewDownload}
         onOpenSettings={() => setSettingsOpen(true)}
-        onOpenSource={() => void client.openUrl(REPO_URL)}
+        onClearFinished={() =>
+          setJobs((previous) =>
+            previous.filter(
+              (job) => !["complete", "failed", "cancelled"].includes(job.status),
+            ),
+          )
+        }
+        onRetry={retryJob}
+        onOpenFile={(path) => void client.openFile(path)}
+        onShowInFolder={(path) => void client.showInFolder(path)}
       />
 
-      <main className="workspace">
-        <DownloadComposer
-          url={url}
-          mode={mode}
-          videoQuality={videoQuality}
-          audioFormat={audioFormat}
-          audioBitrate={audioBitrate}
-          outputFolder={outputFolder}
-          showAdvanced={showAdvanced}
-          removeAudio={removeAudio}
-          onUrlChange={setUrl}
-          onModeChange={(value) => {
-            setMode(value);
-            if (value !== "video") setRemoveAudio(false);
-          }}
-          onVideoQualityChange={setVideoQuality}
-          onAudioFormatChange={setAudioFormat}
-          onAudioBitrateChange={setAudioBitrate}
-          onRemoveAudioChange={setRemoveAudio}
-          onPaste={() => void handlePaste()}
-          onChooseFolder={() => void chooseFolder()}
-          onDownload={() => void startDownload()}
-          activity={
-            <div className="activity-pane">
-              {setupProgress && <SetupStatus progress={setupProgress} />}
-              <DownloadList
-                jobs={jobs}
-                onCancel={(id) => void client.cancelDownload(id)}
-                onRetry={retryJob}
-                onClearFinished={() =>
-                  setJobs((previous) =>
-                    previous.filter(
-                      (job) => !["complete", "failed", "cancelled"].includes(job.status),
-                    ),
-                  )
-                }
-                onOpenFile={(path) => void client.openFile(path)}
-                onShowInFolder={(path) => void client.showInFolder(path)}
-                onOpenSettings={openAuthenticationSettings}
-              />
-            </div>
-          }
+      <div className="app-main-area">
+        <AppHeader
+          tools={tools}
+          engineBusy={setupProgress !== null}
+          isDesktop={client.isDesktop}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => updatePref(SIDEBAR_KEY, false, setSidebarCollapsed)}
+          onRepairEngine={() => void repairTools()}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
-      </main>
 
-      <footer className="app-footer">
-        <span>MediaFilez Desktop {version}</span>
-        <span>Local first · no telemetry · MIT</span>
-      </footer>
+        <main className="app-viewport">
+          <div className="app-container">
+            {setupProgress && <SetupStatus progress={setupProgress} />}
+
+            {activeView === "downloader" ? (
+              <DownloadComposer
+                url={url}
+                mode={mode}
+                videoQuality={videoQuality}
+                audioFormat={audioFormat}
+                audioBitrate={audioBitrate}
+                outputFolder={outputFolder}
+                showAdvanced={showAdvanced}
+                removeAudio={removeAudio}
+                busy={starting}
+                onUrlChange={setUrl}
+                onModeChange={(value) => {
+                  setMode(value);
+                  if (value !== "video") setRemoveAudio(false);
+                }}
+                onVideoQualityChange={setVideoQuality}
+                onAudioFormatChange={setAudioFormat}
+                onAudioBitrateChange={setAudioBitrate}
+                onRemoveAudioChange={setRemoveAudio}
+                onPaste={() => void handlePaste()}
+                onChooseFolder={() => void chooseFolder()}
+                onDownload={() => void startDownload()}
+                activity={
+                  <DownloadList
+                    jobs={jobs}
+                    onCancel={(id) => void client.cancelDownload(id)}
+                    onRetry={retryJob}
+                    onClearFinished={() =>
+                      setJobs((previous) =>
+                        previous.filter(
+                          (job) => !["complete", "failed", "cancelled"].includes(job.status),
+                        ),
+                      )
+                    }
+                    onOpenFile={(path) => void client.openFile(path)}
+                    onShowInFolder={(path) => void client.showInFolder(path)}
+                    onOpenSettings={openAuthenticationSettings}
+                  />
+                }
+              />
+            ) : (
+              <div className="activity-view-wrapper">
+                <DownloadList
+                  jobs={jobs}
+                  onCancel={(id) => void client.cancelDownload(id)}
+                  onRetry={retryJob}
+                  onClearFinished={() =>
+                    setJobs((previous) =>
+                      previous.filter(
+                        (job) => !["complete", "failed", "cancelled"].includes(job.status),
+                      ),
+                    )
+                  }
+                  onOpenFile={(path) => void client.openFile(path)}
+                  onShowInFolder={(path) => void client.showInFolder(path)}
+                  onOpenSettings={openAuthenticationSettings}
+                />
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
 
       <SettingsDialog
         open={settingsOpen}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
         outputFolder={outputFolder}
         autoStart={autoStart}
         showAdvanced={showAdvanced}
@@ -447,6 +477,7 @@ function App() {
         cookieFile={cookieFile}
         apiProvider={apiProvider}
         tools={tools}
+        isDesktop={client.isDesktop}
         checkingTools={checkingTools}
         checkingUpdates={checkingUpdates}
         onClose={() => setSettingsOpen(false)}
@@ -468,6 +499,7 @@ function App() {
         onSave={() => void saveSettings()}
         onRepairTools={() => void repairTools()}
         onCheckUpdates={() => void checkForUpdates()}
+        onOpenSource={() => void client.openUrl(REPO_URL)}
       />
 
       <UpdateDialog

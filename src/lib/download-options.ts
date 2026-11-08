@@ -1,10 +1,17 @@
-import type {
-  AudioBitrate,
-  AudioFormat,
-  DownloadOptions,
-  ProviderKind,
-  VideoQuality,
-} from "./types";
+import type { AudioBitrate, AudioFormat, DownloadOptions, JobStatus, ProviderKind, VideoQuality } from "./types";
+
+export const RUNNING_JOB_STATUSES: JobStatus[] = [
+  "queued",
+  "probing",
+  "downloading",
+  "converting",
+];
+
+export const FINISHED_JOB_STATUSES: JobStatus[] = [
+  "complete",
+  "failed",
+  "cancelled",
+];
 
 export const PROVIDER_ORDER: ProviderKind[] = [
   "direct",
