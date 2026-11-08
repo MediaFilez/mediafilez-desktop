@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
-import { Loader2 } from "lucide-react";
-
+import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import type { SetupProgress } from "../../lib/types";
 
 type SetupBannerProps = {
@@ -13,31 +12,20 @@ function formatMegabytes(bytes: number) {
 
 export function SetupStatus({ progress }: SetupBannerProps) {
   const { tool, phase, downloadedBytes, totalBytes } = progress;
-  const percent =
-    totalBytes && totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : null;
+  const percent = totalBytes && totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : null;
 
-  const label =
-    phase === "verifying"
-      ? `Verifying ${tool} with SHA-256…`
-      : phase === "extracting"
-        ? `Unpacking ${tool}…`
-        : percent !== null
-          ? `Downloading ${tool} · ${percent}% · ${formatMegabytes(downloadedBytes)} of ${formatMegabytes(totalBytes!)}`
-          : `Downloading ${tool} · ${formatMegabytes(downloadedBytes)}`;
+  const label = phase === "verifying" ? `Verifying ${tool}…` : phase === "extracting" ? `Unpacking ${tool}…` : percent !== null ? `Downloading ${tool} · ${percent}% · ${formatMegabytes(downloadedBytes)} of ${formatMegabytes(totalBytes!)}` : `Downloading ${tool} · ${formatMegabytes(downloadedBytes)}`;
 
   return (
     <div className="setup-banner" role="status">
-      <Loader2 className="spin" aria-hidden="true" />
-      <div className="setup-copy">
-        <strong>Preparing the local engine</strong>
-        <span>{label}</span>
+      <div className="setup-header">
+        <ArrowClockwiseIcon className="spin" size={16} weight="regular" aria-hidden="true" />
+        <span className="setup-title">Updating downloader</span>
       </div>
+      <p className="setup-label">{label}</p>
       {percent !== null && (
-        <div className="setup-progress">
-          <div
-            className="setup-progress-fill"
-            style={{ "--progress": percent / 100 } as CSSProperties}
-          />
+        <div className="setup-progress-track">
+          <div className="setup-progress-fill" style={{ transform: `scaleX(${percent / 100})` } as CSSProperties} />
         </div>
       )}
     </div>

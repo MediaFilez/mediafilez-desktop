@@ -1,64 +1,56 @@
-import { Code2, Moon, Settings, ShieldCheck, Sun } from "lucide-react";
-
+import { SidebarSimple } from "@phosphor-icons/react";
+import { IconButton } from "../ui/IconButton";
 import type { ToolsReport } from "../../lib/types";
-import type { Theme } from "../../lib/use-theme";
 
 type AppHeaderProps = {
-  theme: Theme;
   tools: ToolsReport | null;
   engineBusy: boolean;
   isDesktop: boolean;
-  onToggleTheme: () => void;
-  onOpenSettings: () => void;
-  onOpenSource: () => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
+  onRepairEngine?: () => void;
+  onOpenSettings?: () => void;
 };
 
 export function AppHeader({
-  theme,
   tools,
   engineBusy,
-  isDesktop,
-  onToggleTheme,
+  sidebarCollapsed,
+  onToggleSidebar,
+  onRepairEngine,
   onOpenSettings,
-  onOpenSource,
 }: AppHeaderProps) {
-  const engineLabel = engineBusy
-    ? "Preparing engine"
-    : tools?.ready
-      ? "Engine ready"
-      : isDesktop
-        ? "Installs on first use"
-        : "Browser preview";
+  const hasEngineError = tools !== null && !tools.ready && !engineBusy;
 
   return (
-    <header className="app-header">
-      <div className="brand-lockup">
-        <img src="/logo.svg" alt="" className="brand-mark" width="52" height="52" draggable={false} />
-        <div>
-          <h1>MediaFilez</h1>
-          <p>Desktop downloader</p>
-        </div>
+    <header className="app-main-header" data-tauri-drag-region>
+      <div className="header-left">
+        {sidebarCollapsed && onToggleSidebar && (
+          <IconButton
+            label="Expand sidebar"
+            onClick={onToggleSidebar}
+            className="header-sidebar-toggle"
+          >
+            <SidebarSimple size={18} weight="regular" aria-hidden="true" />
+          </IconButton>
+        )}
       </div>
 
-      <div className="header-actions">
-        <div className="engine-status" role="status">
-          <ShieldCheck aria-hidden="true" />
-          <span>{engineLabel}</span>
-        </div>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          onClick={onToggleTheme}
-        >
-          {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-        </button>
-        <button type="button" className="icon-button" aria-label="Settings" onClick={onOpenSettings}>
-          <Settings aria-hidden="true" />
-        </button>
-        <button type="button" className="icon-button" aria-label="View source on GitHub" onClick={onOpenSource}>
-          <Code2 aria-hidden="true" />
-        </button>
+      <div className="header-right">
+        {engineBusy && (
+          <span className="engine-badge busy" role="status">
+            Updating downloader…
+          </span>
+        )}
+        {hasEngineError && (
+          <button
+            type="button"
+            className="engine-badge error"
+            onClick={onRepairEngine ?? onOpenSettings}
+          >
+            Downloader needs an update
+          </button>
+        )}
       </div>
     </header>
   );
